@@ -1,7 +1,7 @@
 import cron from "node-cron";
 import Holding from "../models/Holding.js";
 import WatchlistItem from "../models/WatchlistItem.js";
-import { refreshSymbol } from "./marketDataService.js";
+import { refreshSymbol, refreshIndex } from "./marketDataService.js";
 
 const SECTOR_MAP = {
   RELIANCE: "energy",
@@ -26,6 +26,7 @@ async function getAllTrackedSymbols() {
 
 async function pollOnce() {
   const symbols = await getAllTrackedSymbols();
+  await refreshIndex();
   if (symbols.length === 0) return;
   console.log(`[poller] refreshing ${symbols.length} symbols`);
   // batched sequentially with small stagger to be gentle on the free API

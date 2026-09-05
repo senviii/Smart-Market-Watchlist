@@ -1,6 +1,9 @@
 import { useState } from "react";
 import Sparkline from "./Sparkline.jsx";
 import ScoreRing from "./ScoreRing.jsx";
+import { logInteraction, removeFromWatchlist } from "../utils/api.js";
+
+const DEMO_USER_ID = "6a9ac2227961cbaec7146dc2";
 
 const SECTOR_ACCENT = {
   banking: "#4f7cff",
@@ -13,16 +16,44 @@ const SECTOR_ACCENT = {
   unknown: "#8a8f9c"
 };
 
-export default function StockCard({ item, prominent }) {
+export default function StockCard({ item, prominent, onRemoved }) {
   const [expanded, setExpanded] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
   const positive = item.pctChange >= 0;
   const accent = SECTOR_ACCENT[item.sector] || SECTOR_ACCENT.unknown;
+
+  const handleExpand = () => {
+    const next = !expanded;
+    setExpanded(next);
+    if (next) {
+      logInteraction(DEMO_USER_ID, item.symbol, item.eventType, "clicked").catch(() => {});
+    }
+  };
+
+  const handleDismiss = (e) => {
+    e.stopPropagation();
+    setDismissed(true);
+    logInteraction(DEMO_USER_ID, item.symbol, item.eventType, "dismissed").catch(() => {});
+  };
+  const handleRemove = async (e) => {
+  e.stopPropagation();
+  await removeFromWatchlist(DEMO_USER_ID, item.symbol).catch(() => {});
+  if (onRemoved) onRemoved(item.symbol);
+};
+
+  if (dismissed) {
+    return (
+      <div className="stock-card stock-card--dismissed">
+        <p className="stock-card__dismissed-note">{item.symbol} — noted, showing less like this</p>
+      </div>
+    );
+  }
 
   return (
     <div
       className={`stock-card ${prominent ? "stock-card--prominent" : ""} ${expanded ? "stock-card--expanded" : ""}`}
       style={{ "--accent": accent }}
-      onClick={() => setExpanded((e) => !e)}
+      onClick={handleExpand}
     >
       <div className="stock-card__row">
         <ScoreRing score={item.score} />
@@ -40,6 +71,9 @@ export default function StockCard({ item, prominent }) {
             {item.pctChange}%
           </p>
         </div>
+        <button className="dismiss-btn" onClick={handleDismiss} title="not interested in this type of alert">
+          ×
+        </button>
       </div>
 
       {item.sparkline?.length > 1 && (
@@ -60,6 +94,11 @@ export default function StockCard({ item, prominent }) {
             <div className="detail-note">{item.sectorContext}</div>
           )}
           {item.isStale && <p className="stale-note">data may be delayed</p>}
+          {!prominent && (
+  <button className="remove-link" onClick={handleRemove}>
+    remove from watchlist
+  </button>
+          )}
         </div>
       )}
     </div>

@@ -1,10 +1,11 @@
 export default function ScoreRing({ score }) {
-  const pct = Math.min(score / 10, 1);
+  const safeScore = typeof score === "number" && !Number.isNaN(score) ? score : 0;
+  const pct = Math.min(safeScore / 10, 1);
   const radius = 16;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference * (1 - pct);
 
-  const color = score >= 7 ? "var(--color-amber)" : score >= 4 ? "#d9a441" : "var(--text-muted)";
+  const color = safeScore >= 7 ? "var(--color-amber)" : safeScore >= 4 ? "#d9a441" : "var(--text-muted)";
 
   return (
     <svg viewBox="0 0 40 40" className="score-ring">
@@ -23,7 +24,7 @@ export default function ScoreRing({ score }) {
         className="score-ring__progress"
       />
       <text x="20" y="24" textAnchor="middle" className="score-ring__text">
-        {score.toFixed(0)}
+        {safeScore.toFixed(0)}
       </text>
     </svg>
   );

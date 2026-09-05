@@ -28,13 +28,16 @@ const SECTOR_VOLATILITY = {
   unknown: 1.5
 };
 
-function priceMoveScore(snapshot) {
+function priceMoveScore(snapshot, indexPctChange = null) {
+  if (!snapshot.prevClose || snapshot.prevClose === 0) {
+    return { score: 0, pctChange: 0, zScore: 0, excessMove: 0 };
+  }
   const pctChange = ((snapshot.price - snapshot.prevClose) / snapshot.prevClose) * 100;
   const expectedVol = SECTOR_VOLATILITY[snapshot.sector] || SECTOR_VOLATILITY.unknown;
-  // z-score-ish: how many "typical days" of movement happened today
-  const zScore = Math.abs(pctChange) / expectedVol;
+  const excessMove = indexPctChange !== null ? pctChange - indexPctChange : pctChange;
+  const zScore = Math.abs(excessMove) / expectedVol;
   const score = clamp(zScore * 3, 0, 10);
-  return { score, pctChange, zScore };
+  return { score, pctChange, zScore, excessMove };
 }
 
 function volumeSpikeScore(snapshot) {
@@ -69,8 +72,8 @@ function timeDecay(score, eventTime, halfLifeHours = 6) {
  * Computes the base meaningful-change score for a snapshot.
  * This is universal — same formula for every stock, portfolio or not.
  */
-function computeBaseScore(snapshot) {
-  const price = priceMoveScore(snapshot);
+function computeBaseScore(snapshot, indexPctChange = null) {
+  const price = priceMoveScore(snapshot, indexPctChange);
   const volume = volumeSpikeScore(snapshot);
   const breakout = breakoutScore(snapshot);
 
@@ -78,7 +81,13 @@ function computeBaseScore(snapshot) {
   let reasons = [];
 
   if (Math.abs(price.pctChange) > 0.5) {
-    reasons.push(`${price.pctChange > 0 ? "+" : ""}${price.pctChange.toFixed(1)}% vs sector-typical ${(price.zScore).toFixed(1)}x`);
+    if (indexPctChange !== null && Math.abs(price.pctChange - indexPctChange) < 0.3) {
+      reasons.push(`${price.pctChange > 0 ? "+" : ""}${price.pctChange.toFixed(1)}% — tracking the market (Nifty ${indexPctChange > 0 ? "+" : ""}${indexPctChange.toFixed(1)}%)`);
+    } else if (indexPctChange !== null) {
+      reasons.push(`${price.pctChange > 0 ? "+" : ""}${price.pctChange.toFixed(1)}% vs Nifty ${indexPctChange > 0 ? "+" : ""}${indexPctChange.toFixed(1)}% — stock-specific move`);
+    } else {
+      reasons.push(`${price.pctChange > 0 ? "+" : ""}${price.pctChange.toFixed(1)}% vs sector-typical ${(price.zScore).toFixed(1)}x`);
+    }
   }
   if (volume.ratio > 1.3) {
     reasons.push(`volume ${volume.ratio.toFixed(1)}x avg`);
@@ -96,7 +105,6 @@ function computeBaseScore(snapshot) {
     eventType: breakout ? breakout.type : volume.score > price.score ? "volume_spike" : "price_move"
   };
 }
-
 /**
  * Sector correlation boost — only used to tag/explain, per the
  * "fairness" decision: non-portfolio stocks are never suppressed,

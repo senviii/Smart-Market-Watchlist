@@ -5,6 +5,7 @@ import StockSnapshot from "../models/StockSnapshot.js";
 import ChangeEvent from "../models/ChangeEvent.js";
 import { computeBaseScore, computeSectorContext, timeDecay } from "../services/scoringService.js";
 import { generateDigestNarrative } from "../services/narrativeService.js";
+import { getPersonalizedWeights, logInteraction } from "../services/feedbackService.js";
 
 const router = express.Router();
 
@@ -28,14 +29,23 @@ router.get("/:userId", async (req, res) => {
 
     const snapshots = await StockSnapshot.find({ symbol: { $in: allSymbols } });
     const snapshotMap = Object.fromEntries(snapshots.map((s) => [s.symbol, s]));
+    const personalWeights = await getPersonalizedWeights(userId);
+    const indexSnapshot = await StockSnapshot.findOne({ symbol: "NIFTY50" });
+const indexPctChange =
+  indexSnapshot && indexSnapshot.prevClose
+    ? ((indexSnapshot.price - indexSnapshot.prevClose) / indexSnapshot.prevClose) * 100
+    : null;
 
     const buildItem = async (symbol, isHolding) => {
       const snap = snapshotMap[symbol];
-      if (!snap) return null;
+      if (!snap || !snap.prevClose) return null; // not fetched yet or invalid symbol — skip for now
 
-      const base = computeBaseScore(snap);
+      const base = computeBaseScore(snap, indexPctChange);
       const latestEvent = await ChangeEvent.findOne({ symbol }).sort({ createdAt: -1 });
       const decayedScore = latestEvent ? timeDecay(latestEvent.score, latestEvent.createdAt) : base.score;
+      const personalWeight = personalWeights[base.eventType] ?? 1.0;
+      const personalizedScore = decayedScore * personalWeight;
+
 
       const watchItem = watchlistItems.find((w) => w.symbol === symbol);
       const isNew = watchItem ? new Date(snap.fetchedAt) > new Date(watchItem.lastSeenAt) : true;
@@ -49,7 +59,8 @@ router.get("/:userId", async (req, res) => {
         sector: snap.sector,
         price: snap.price,
         pctChange: Number(base.pctChange.toFixed(2)),
-        score: Number(decayedScore.toFixed(1)),
+        score: Number(personalizedScore.toFixed(1)),
+        eventType: base.eventType,
         reason: base.reason,
         sectorContext,
         isNew,
@@ -140,5 +151,17 @@ router.post("/:userId/mark-seen", async (req, res) => {
     res.status(500).json({ error: "failed to mark seen" });
   }
 });
-
+router.post("/:userId/interact", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { symbol, eventType, action } = req.body;
+    if (!symbol || !eventType || !["clicked", "dismissed"].includes(action)) {
+      return res.status(400).json({ error: "symbol, eventType, and a valid action are required" });
+    }
+    await logInteraction(userId, symbol.toUpperCase(), eventType, action);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "failed to log interaction" });
+  }
+});
 export default router;

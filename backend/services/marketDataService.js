@@ -33,6 +33,34 @@ async function fetchQuote(symbol) {
  * history, recompute avgVolume20d, and log a ChangeEvent if the
  * score crossed a meaningful threshold.
  */
+async function fetchIndexQuote() {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI`;
+  const { data } = await axios.get(url, { timeout: 8000 });
+  const meta = data?.chart?.result?.[0]?.meta;
+  if (!meta) throw new Error("No index data");
+  return {
+    price: meta.regularMarketPrice,
+    prevClose: meta.previousClose ?? meta.chartPreviousClose
+  };
+}
+
+async function refreshIndex() {
+  let snapshot = await StockSnapshot.findOne({ symbol: "NIFTY50" });
+  if (!snapshot) {
+    snapshot = new StockSnapshot({ symbol: "NIFTY50", sector: "index", price: 0, prevClose: 0 });
+  }
+  try {
+    const quote = await fetchIndexQuote();
+    snapshot.price = quote.price;
+    snapshot.prevClose = quote.prevClose;
+    snapshot.isStale = false;
+    snapshot.fetchedAt = new Date();
+    await snapshot.save();
+  } catch (err) {
+    console.error("[marketData] failed to refresh index:", err.message);
+  }
+  return snapshot;
+}
 async function refreshSymbol(symbol, sector) {
   let snapshot = await StockSnapshot.findOne({ symbol });
   if (!snapshot) {
@@ -96,4 +124,4 @@ async function getSnapshot(symbol) {
   return snapshot;
 }
 
-export { refreshSymbol, getSnapshot, fetchQuote };
+export { refreshSymbol, refreshIndex, getSnapshot, fetchQuote };

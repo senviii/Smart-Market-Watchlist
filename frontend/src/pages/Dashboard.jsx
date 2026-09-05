@@ -2,9 +2,8 @@ import { useEffect, useState, useCallback } from "react";
 import { getWatchlist, markSeen } from "../utils/api.js";
 import StockCard from "../components/StockCard.jsx";
 import DigestBanner from "../components/DigestBanner.jsx";
+import AddStock from "../components/AddStock.jsx";
 
-// Demo user id — in a real app this comes from auth. For the hackathon
-// demo, seed.js prints this to the console after `npm run seed`.
 const DEMO_USER_ID = "6a9ac2227961cbaec7146dc2";
 
 export default function Dashboard() {
@@ -31,9 +30,31 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [load]);
 
-  if (loading) return <p className="status-text">loading watchlist…</p>;
+  const handleRemoved = (symbol) => {
+    setData((prev) => ({
+      ...prev,
+      marketWatch: prev.marketWatch.filter((i) => i.symbol !== symbol)
+    }));
+  };
+
+  if (loading) {
+    return (
+      <div className="dashboard">
+        <div className="stats-row">
+          <div className="skeleton skeleton--stat" />
+          <div className="skeleton skeleton--stat" />
+        </div>
+        <div className="skeleton skeleton--digest" />
+        {[1, 2, 3].map((i) => (
+          <div className="skeleton skeleton--card" key={i} />
+        ))}
+      </div>
+    );
+  }
   if (error) return <p className="status-text status-text--error">{error}</p>;
   if (!data) return null;
+
+  const isEmpty = data.yourHoldings.length === 0 && data.marketWatch.length === 0;
 
   const portfolioValue = data.yourHoldings.reduce((sum, i) => sum + i.price, 0);
   const avgChange =
@@ -58,20 +79,34 @@ export default function Dashboard() {
       </div>
 
       <DigestBanner digest={data.digest} />
+      <AddStock onChanged={load} />
 
-      <section>
-        <h2 className="section-label">your holdings</h2>
-        {data.yourHoldings.map((item) => (
-          <StockCard key={item.symbol} item={item} prominent />
-        ))}
-      </section>
+      {isEmpty ? (
+        <div className="empty-state">
+          <p>Your watchlist is empty.</p>
+          <p className="empty-state__sub">Add a stock symbol above to start tracking meaningful moves.</p>
+        </div>
+      ) : (
+        <>
+          {data.yourHoldings.length > 0 && (
+            <section>
+              <h2 className="section-label">your holdings</h2>
+              {data.yourHoldings.map((item) => (
+                <StockCard key={item.symbol} item={item} prominent />
+              ))}
+            </section>
+          )}
 
-      <section>
-        <h2 className="section-label">market watch</h2>
-        {data.marketWatch.map((item) => (
-          <StockCard key={item.symbol} item={item} />
-        ))}
-      </section>
+          {data.marketWatch.length > 0 && (
+            <section>
+              <h2 className="section-label">market watch</h2>
+              {data.marketWatch.map((item) => (
+                <StockCard key={item.symbol} item={item} onRemoved={handleRemoved} />
+              ))}
+            </section>
+          )}
+        </>
+      )}
     </div>
   );
 }
